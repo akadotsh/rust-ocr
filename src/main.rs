@@ -1,9 +1,11 @@
 use clap::Parser;
+use std::path::PathBuf;
+
 use leptess::LepTess;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    path: String,
+    path: PathBuf,
 }
 
 #[derive(Debug)]
@@ -26,14 +28,13 @@ fn main() {
 
     for line in tsv.lines().skip(1) {
         let columns: Vec<&str> = line.split('\t').collect();
-        // print!("{}",columns[1]);
 
         if columns.len() < 12 {
             continue;
         }
 
         let conf: f32 = columns[10].parse().unwrap_or(0.0);
-        // remove garbage
+
         if conf < 70.0 {
             continue;
         }
@@ -59,7 +60,6 @@ fn main() {
         if let Some(last_line) = lines.last_mut() {
             let last_top = last_line[0].top;
 
-            // same line if vertical distance is small
             if (word.top - last_top).abs() < 10 {
                 last_line.push(word);
                 continue;
