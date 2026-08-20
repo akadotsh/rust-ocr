@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 clap = { version = "4.6.6", features = ["derive"] }
 leptess = "0.14.0"
+lopdf = "0.44.0"

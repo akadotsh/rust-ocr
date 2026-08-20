@@ -1,4 +1,6 @@
 use clap::Parser;
+use lopdf::Document;
+use std::path::Path;
 use std::path::PathBuf;
 
 use leptess::LepTess;
@@ -16,69 +18,92 @@ struct Word {
     conf: f32,
 }
 
+fn extract_pdf_text(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let doc = Document::load(path)?;
+
+    let pages = doc.get_pages();
+    println!("Pages: {}", pages.len());
+
+    let page_nums: Vec<u32> = pages.keys().cloned().collect();
+
+    let text = doc.extract_text(&page_nums)?;
+
+    println!("{}", text);
+
+    Ok(())
+}
+
 fn main() {
     let cli = Cli::parse();
-    let mut lt = LepTess::new(None, "eng").unwrap();
-    lt.set_image(&cli.path).unwrap();
-    lt.set_variable(leptess::Variable::PreserveInterwordSpaces, "11")
-        .unwrap();
-    let tsv = lt.get_tsv_text(0).unwrap();
 
-    let mut words = Vec::new();
+    let path = Path::new(&cli.path);
+    if let Some(extension) = path.extension() {
+        if extension == "pdf" {
+            extract_pdf_text(&cli.path);
+        } else {
+            let mut lt = LepTess::new(None, "eng").unwrap();
+            lt.set_image(&cli.path).unwrap();
+            lt.set_variable(leptess::Variable::PreserveInterwordSpaces, "11")
+                .unwrap();
+            let tsv = lt.get_tsv_text(0).unwrap();
 
-    for line in tsv.lines().skip(1) {
-        let columns: Vec<&str> = line.split('\t').collect();
+            let mut words = Vec::new();
 
-        if columns.len() < 12 {
-            continue;
-        }
+            for line in tsv.lines().skip(1) {
+                let columns: Vec<&str> = line.split('\t').collect();
 
-        let conf: f32 = columns[10].parse().unwrap_or(0.0);
+                if columns.len() < 12 {
+                    continue;
+                }
 
-        if conf < 70.0 {
-            continue;
-        }
-        let text = columns[11].to_string();
+                let conf: f32 = columns[10].parse().unwrap_or(0.0);
 
-        if text.trim().is_empty() {
-            continue;
-        }
+                if conf < 70.0 {
+                    continue;
+                }
+                let text = columns[11].to_string();
 
-        words.push(Word {
-            text,
-            left: columns[6].parse().unwrap(),
-            top: columns[7].parse().unwrap(),
-            conf,
-        });
-    }
+                if text.trim().is_empty() {
+                    continue;
+                }
 
-    words.sort_by_key(|w| w.top);
+                words.push(Word {
+                    text,
+                    left: columns[6].parse().unwrap(),
+                    top: columns[7].parse().unwrap(),
+                    conf,
+                });
+            }
 
-    let mut lines: Vec<Vec<&Word>> = Vec::new();
+            words.sort_by_key(|w| w.top);
 
-    for word in &words {
-        if let Some(last_line) = lines.last_mut() {
-            let last_top = last_line[0].top;
+            let mut lines: Vec<Vec<&Word>> = Vec::new();
 
-            if (word.top - last_top).abs() < 10 {
-                last_line.push(word);
-                continue;
+            for word in &words {
+                if let Some(last_line) = lines.last_mut() {
+                    let last_top = last_line[0].top;
+
+                    if (word.top - last_top).abs() < 10 {
+                        last_line.push(word);
+                        continue;
+                    }
+                }
+                lines.push(vec![word]);
+            }
+
+            for line in &mut lines {
+                line.sort_by_key(|w| w.left);
+            }
+
+            for line in lines {
+                let text = line
+                    .iter()
+                    .map(|w| w.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                println!("{}", text);
             }
         }
-        lines.push(vec![word]);
-    }
-
-    for line in &mut lines {
-        line.sort_by_key(|w| w.left);
-    }
-
-    for line in lines {
-        let text = line
-            .iter()
-            .map(|w| w.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        println!("{}", text);
     }
 }
