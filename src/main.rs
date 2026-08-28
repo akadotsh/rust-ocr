@@ -1,103 +1,13 @@
 use clap::Parser;
-use lopdf::Document;
 use std::path::Path;
 use std::path::PathBuf;
-
-use leptess::LepTess;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     path: PathBuf,
 }
 
-#[derive(Debug)]
-struct Word {
-    text: String,
-    left: i32,
-    top: i32,
-    conf: f32,
-}
-
-fn extract_pdf_text(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
-    let doc = Document::load(path)?;
-
-    let pages = doc.get_pages();
-    println!("Pages: {}", pages.len());
-
-    let page_nums: Vec<u32> = pages.keys().cloned().collect();
-
-    let text = doc.extract_text(&page_nums)?;
-
-    println!("{}", text);
-
-    Ok(())
-}
-
-fn extract_image_text(path: &Path) {
-    let mut lt = LepTess::new(None, "eng").unwrap();
-    lt.set_image(path).unwrap();
-    lt.set_variable(leptess::Variable::PreserveInterwordSpaces, "11")
-        .unwrap();
-    let tsv = lt.get_tsv_text(0).unwrap();
-
-    let mut words = Vec::new();
-
-    for line in tsv.lines().skip(1) {
-        let columns: Vec<&str> = line.split('\t').collect();
-
-        if columns.len() < 12 {
-            continue;
-        }
-
-        let conf: f32 = columns[10].parse().unwrap_or(0.0);
-
-        if conf < 70.0 {
-            continue;
-        }
-        let text = columns[11].to_string();
-
-        if text.trim().is_empty() {
-            continue;
-        }
-
-        words.push(Word {
-            text,
-            left: columns[6].parse().unwrap(),
-            top: columns[7].parse().unwrap(),
-            conf,
-        });
-    }
-
-    words.sort_by_key(|w| w.top);
-
-    let mut lines: Vec<Vec<&Word>> = Vec::new();
-
-    for word in &words {
-        if let Some(last_line) = lines.last_mut() {
-            let last_top = last_line[0].top;
-
-            if (word.top - last_top).abs() < 10 {
-                last_line.push(word);
-                continue;
-            }
-        }
-        lines.push(vec![word]);
-    }
-
-    for line in &mut lines {
-        line.sort_by_key(|w| w.left);
-    }
-
-    for line in lines {
-        let text = line
-            .iter()
-            .map(|w| w.text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        println!("{}", text);
-    }
-}
+mod parse;
 
 fn main() {
     let cli = Cli::parse();
@@ -105,9 +15,9 @@ fn main() {
     let path = Path::new(&cli.path);
     if let Some(extension) = path.extension() {
         if extension == "pdf" {
-            extract_pdf_text(&cli.path);
+            parse::extract_pdf_text(&cli.path);
         } else {
-            extract_image_text(path);
+            parse::extract_image_text(path);
         }
     }
 }
